@@ -12,6 +12,147 @@ import io # send_fileのためにバイトデータを扱う
 app = Flask(__name__)
 
 TMP_DIR = "/tmp"
+# api/proxy.py (抜粋 - ファイルの先頭近くに配置)
+
+# 簡易的なコンテンツ
+INDEX_HTML = """
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ホーム</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; background-color: #f4f4f4; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        nav { margin-bottom: 20px; }
+        nav a { margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold; }
+        nav a:hover { text-decoration: underline; color: #0056b3; }
+        p { line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav>
+            <a href="/">ホーム</a>
+            <a href="/about">利用規約</a>
+            <a href="/proxy">プロキシ</a>
+        </nav>
+        <h1>ようこそ！</h1>
+        <p>このサーバーは、`curl`コマンドを使ってWebコンテンツを取得し表示するシンプルなプロキシです。</p>
+        <p>上部のメニューから移動できます。</p>
+    </div>
+</body>
+</html>
+"""
+
+TERMS_HTML = """
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>利用規約</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; background-color: #f4f4f4; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        nav { margin-bottom: 20px; }
+        nav a { margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold; }
+        nav a:hover { text-decoration: underline; color: #0056b3; }
+        ul { list-style-type: disc; margin-left: 20px; }
+        li { margin-bottom: 10px; }
+        p { line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav>
+            <a href="/">ホーム</a>
+            <a href="/about">利用規約</a>
+            <a href="/proxy">プロキシ</a>
+        </nav>
+        <h1>利用規約</h1>
+        <p>本サービス（プロキシ機能を含む）の利用に際し、以下の規約に同意したものとみなします。</p>
+        <ul>
+            <li>本サービスは学習目的または個人的な利用に限ります。</li>
+            <li>違法行為、またはそれに準ずる行為には使用しないでください。</li>
+            <li>本サービスの利用によって生じたいかなる損害についても、開発者は一切の責任を負いません。</li>
+            <li>予告なくサービス内容を変更または停止する場合があります。</li>
+            </ul>
+        <p>上記にご同意いただけない場合、本サービスの利用をお控えください。</p>
+    </div>
+</body>
+</html>
+"""
+
+PROXY_FORM_HTML = """
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URLプロキシ</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; background-color: #f4f4f4; color: #333; }
+        .header { background-color: #333; color: white; padding: 10px 2em; display: flex; justify-content: space-between; align-items: center; }
+        .header .url-display { font-size: 0.9em; }
+        .header .options { font-size: 0.9em; }
+        .header a { color: white; text-decoration: none; margin-left: 10px; }
+        .header a:hover { text-decoration: underline; }
+
+        .container { max-width: 800px; margin: 2em auto; background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        nav { margin-bottom: 20px; }
+        nav a { margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold; }
+        nav a:hover { text-decoration: underline; color: #0056b3; }
+        form { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
+        input[type="text"] { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1em; }
+        input[type="submit"] { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1em; }
+        input[type="submit"]:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="url-display">URL: <span id="current-url"></span></div>
+        <div class="options">
+            Options:
+            <input type="checkbox" id="encrypt-url" name="encrypt-url"> <label for="encrypt-url">Encrypt URL</label>
+            <input type="checkbox" id="encrypt-page" name="encrypt-page"> <label for="encrypt-page">Encrypt Page</label>
+            <input type="checkbox" id="allow-cookies" name="allow-cookies" checked> <label for="allow-cookies">Allow Cookies</label>
+            <input type="checkbox" id="remove-scripts" name="remove-scripts"> <label for="remove-scripts">Remove Scripts</label>
+            <input type="checkbox" id="remove-objects" name="remove-objects"> <label for="remove-objects">Remove Objects</label>
+            <a href="/">[home]</a> <a href="#">[clear cookies]</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <nav>
+            <a href="/">ホーム</a>
+            <a href="/about">利用規約</a>
+            <a href="/proxy">プロキシ</a>
+        </nav>
+        <h1>URLプロキシ</h1>
+        <p>ここに取得したいURLを入力して「Go」ボタンを押してください。</p>
+        <form action="/proxy" method="post">
+            <label for="url">URL:</label>
+            <input type="text" id="url" name="url" placeholder="例: https://www.example.com" value="">
+            <input type="submit" value="Go">
+        </form>
+    </div>
+    <script>
+        // 現在のURLをヘッダーに表示 (これはブラウザのURLなので、プロキシが取得したURLとは異なります)
+        document.getElementById('current-url').textContent = window.location.href;
+    </script>
+</body>
+</html>
+"""
+
+# ... (ここからFlaskアプリの定義や関数などが続きます)
+# app = Flask(__name__)
+# TMP_DIR = "/tmp"
+# ...
 
 # MIME_TYPES 辞書は同じ
 MIME_TYPES = {
