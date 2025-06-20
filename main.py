@@ -452,6 +452,8 @@ def proxy():
             except subprocess.CalledProcessError as e:
                 print(f"Curl failed for direct proxy {target_url}: {e.stderr}")
                 return "Failed to fetch resource.", 502
+            except FileNotFoundError:
+                return "Internal Server Error: 'curl' command not found. Please ensure curl is installed and in your PATH.", 500
             except Exception as e:
                 print(f"Error for direct proxy {target_url}: {e}")
                 return "Internal Server Error.", 500
@@ -600,7 +602,6 @@ def serve_tmp_resource(resource_id_ext):
     
     if not os.path.exists(tmp_file_path):
         # If resource not found in /tmp, return 404.
-        # Re-fetching here would be complex due to the lack of original URL.
         print(f"Resource not found in temporary storage: {tmp_file_path}. Returning 404.")
         return "Resource not found.", 404
     
