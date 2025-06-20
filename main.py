@@ -219,22 +219,42 @@ def home():
 def about():
     return TERMS_HTML
 
+# api/proxy.py (proxy() 関数の修正部分)
+
 @app.route('/proxy', methods=['GET', 'POST'])
 def proxy():
     if request.method == 'POST':
         target_url = request.form.get('url', '')
-    else: # GET
-        target_url = request.args.get('url', '')
+    else: # GET リクエストの場合
+        target_url = request.args.get('url', '') # GETパラメータからURLを取得
 
+        # GETリクエストでURLパラメータがない場合は、フォームを表示して正常終了
+        if not target_url:
+            return PROXY_FORM_HTML # 200 OK がデフォルトで返される
+
+    # ここからGETまたはPOSTでtarget_urlが取得できた場合の処理
+    # target_urlがまだ空の場合（POSTで空のURLが送信された場合など）の処理
     if not target_url:
-        return PROXY_FORM_HTML, 400
+        # このブロックはPOSTで空のURLが送信された場合にのみ到達すべき
+        form_with_error = PROXY_FORM_HTML.replace(
+            'value=""',
+            'value="" style="border-color: red;"'
+        )
+        form_with_error = form_with_error.replace(
+            '</form>',
+            '<p style="color: red; text-align: center;">URLを入力してください。</p></form>'
+        )
+        return form_with_error, 400
 
+
+    # ここから先の処理は変更なし
     if not (target_url.startswith("http://") or target_url.startswith("https://")):
         return "Bad Request: URL must start with http:// or https://", 400
 
     print(f"Proxy request for: {target_url}")
 
     try:
+        # ... (既存のcurlとHTML書き換えロジック) ...
         html_cmd = ['curl', '-sL', '--compressed', target_url]
         html_process = subprocess.run(html_cmd, capture_output=True, check=True)
         
@@ -242,6 +262,7 @@ def proxy():
         response_content_bytes = html_process.stdout
 
         if 'text/html' in content_type:
+            # ... (BeautifulSoupによるHTML書き換えロジック) ...
             decoded_html_content = None
             for encoding in ['utf-8', 'shift_jis', 'euc_jp', 'latin-1']:
                 try:
@@ -265,7 +286,7 @@ def proxy():
             for tag_name, attr_name in attrs_to_rewrite.items():
                 for tag in soup.find_all(tag_name, {attr_name: True}):
                     original_url = tag.get(attr_name)
-                    if original_url and not original_url.startswith('data:') and not original_url.startswith('#'): # data: URIとフラグメントURIは無視
+                    if original_url and not original_url.startswith('data:') and not original_url.startswith('#'):
                         absolute_url = urljoin(base_url, original_url)
                         proxied_resource_path, _ = _fetch_and_store_resource(absolute_url)
                         
@@ -274,12 +295,9 @@ def proxy():
                         else:
                             print(f"Warning: Failed to proxy resource: {absolute_url}")
             
-            # CSS内のurl()関数を書き換える簡易ロジック
-            # これは非常に限定的であり、正確なCSSパースは行わない
             for style_tag in soup.find_all('style'):
                 if style_tag.string:
                     original_css = style_tag.string
-                    # url(...) パターンを検索
                     rewritten_css = re.sub(r'url\((["\']?)(.*?)\1\)', 
                                            lambda m: f"url({m.group(1)}{_rewrite_css_url(base_url, m.group(2))}{m.group(1)})", 
                                            original_css)
@@ -287,7 +305,6 @@ def proxy():
                     if original_css != rewritten_css:
                         print(f"Rewritten CSS in style tag.")
 
-            # <meta http-equiv="refresh"> の content を書き換え
             for meta_tag in soup.find_all('meta', {'http-equiv': re.compile(re.escape('refresh'), re.IGNORECASE)}):
                 content_attr = meta_tag.get('content')
                 if content_attr and 'url=' in content_attr.lower():
